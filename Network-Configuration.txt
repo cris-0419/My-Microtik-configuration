@@ -1,0 +1,368 @@
+#I set the firewall rule just for R1 to be more easy to read
+
+R1:
+system identity set name=R1
+ip dhcp-client add interface=ether1 disabled=no
+ip address add address=172.48.10.1/30 interface=ether2
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=192.168.1.1
+routing ospf instance add name=OSPF2 router-id=2.2.2.2
+routing ospf network add network=172.48.10.0/30 area=backbone
+routing ospf network add network=192.168.1.0/24 area=backbone
+ip service disable telnet,ftp,www,www-ssl,api,api-ssl
+system package disable hotspot,tr069-client,iot,ipv6,calea,openflow,wireless,ups,dude,multicast,gps,kvm,mpls,lcd,lora
+ip service set ssh port=9345
+ip ssh set strong-crypto=yes
+ip ssh regenerate-host-key
+ip firewall filter add chain=input protocol=tcp dst-port=3258 action=add-src-to-address-list address-list=Gate_1 address-list-timeout=15s
+ip firewall filter add chain=input protocol=tcp dst-port=8415 src-address-list=Gate_1 action=add-src-to-address-list address-list=Gate_2 address-list-timeout=30m
+ip firewall filter add chain=input src-address-list=Gate_2 action=accept
+ip firewall filter add chain=input src-address=192.168.10.32 src-mac-address=4C-ED-FB-79-D7-DF action=accept comment="Cristian-PC"
+user set cristian address=192.168.10.250
+tool mac-server set allowed-interface-list=none
+tool mac-server ping set enabled=no
+tool mac-server mac-winbox set allowed-interface-list=none
+ip neighbor discovery-settings set discover-interface-list=none
+tool bandwidth-server set enabled=no
+tool romon set enabled=no
+ip firewall filter add chain=forward connection-state=established,related,new action=accept comment="allow new connection"
+ip firewall filter add chain=input connection-state=established,related,new action=accept comment="allow input connection"
+ip firewall filter add chain=forward connection-state=invalid action=drop comment="invalid packet drop"
+ip firewall filter add chain=input connection-state=invalid action=drop comment="invalid packet drop input"
+ip firewall filter add chain=input action=drop src-address-list="Black List (SSH)" in-interface=ether1 log=yes log-prefix="BL_Black List (SSH)" comment="Drop IPs in Black List (SSH)"
+ip firewall filter add chain=input action=jump protocol=tcp dst-port=9345 in-interface=ether1 jump-target="Black List (SSH) Chain" comment="SSH traffic to Black List chain"
+ip firewall filter add chain="Black List (SSH) Chain" action=add-src-to-address-list src-address-list="Black List (SSH) Stage 3" address-list="Black List (SSH)" address-list-timeout=4w2d connection-state=new in-interface=ether1 log=yes log-prefix="Add_Black list (SSH)" comment="Stage 3 to Final Black List"
+ip firewall filter add chain="Black List (SSH) Chain" action=add-src-to-address-list src-address-list="Black List (SSH) Stage 2" address-list="Black List (SSH) Stage 3" address-list-timeout=1m connection-state=new in-interface=ether1 log=yes log-prefix="Add_Black list (SSH) S3" comment="Stage 2 to Stage 3"
+ip firewall filter add chain="Black List (SSH) Chain" action=add-src-to-address-list src-address-list="Black List (SSH) Stage 1" address-list="Black List (SSH) Stage 2" address-list-timeout=1m connection-state=new in-interface=ether1 log=yes log-prefix="Add_Black list (SSH) S2" comment="Stage 1 to Stage 2"
+ip firewall filter add chain="Black List (SSH) Chain" action=add-src-to-address-list address-list="Black List (SSH) Stage 1" address-list-timeout=1m connection-state=new in-interface=ether1 log=yes log-prefix="Add_Black list (SSH) S1" comment="Initial SSH attempt to Stage 1"
+ip firewall filter add chain="Black List (SSH) Chain" action=return comment="Return from Black List chain"
+ip firewall filter add chain=input protocol=icmp limit=2,5:packet
+ip firewall filter add chain=input protocol=icmp action=drop
+ip firewall address-list
+add list="BOGONS" address=0.0.0.0/8
+add list="BOGONS" address=10.0.0.0/8
+add list="BOGONS" address=100.64.0.0/10
+add list="BOGONS" address=127.0.0.0/8
+add list="BOGONS" address=169.254.0.0/16
+add list="BOGONS" address=172.16.0.0/12
+add list="BOGONS" address=192.0.0.0/24
+add list="BOGONS" address=192.0.2.0/24
+add list="BOGONS" address=192.168.0.0/16
+add list="BOGONS" address=198.18.0.0/15
+add list="BOGONS" address=198.51.100.0/24
+add list="BOGONS" address=203.0.113.0/24
+add list="BOGONS" address=224.0.0.0/3
+.. .. ..
+ip firewall filter add chain=forward in-interface=ether1 src-address-list=BOGONS action=drop
+/ip firewall filter add chain=forward protocol=tcp psd=21,3,3,1 action=add-src-to-address-list address-list="Port Scan" address-list-timeout=24h
+/ip firewall filter add chain=input protocol=tcp psd=21,3,3,1 action=add-src-to-address-list address-list="Port Scan" address-list-timeout=24h
+ip firewall filter add chain=forward src-address-list="Port Scan" action=drop
+ip firewall filter add chain=input src-address-list="Port Scan" action=drop
+ip firewall filter add chain=input protocol=icmp dst-address-type=broadcast action=drop
+ip firewall filter add chain=input protocol=icmp in-interface=ether2 action=drop
+ip firewall filter add chain=forward protocol=tcp tcp-flags=syn connection-limit=15,32 action=add-src-to-address-list address-list="Syn Flood" address-list-timeout=24h
+ip firewall filter add chain=input protocol=tcp tcp-flags=syn connection-limit=15,32 action=add-src-to-address-list address-list="Syn Flood" address-list-timeout=24h
+ip firewall filter add chain=forward protocol=tcp src-address-list="Syn Flood" action=tarpit
+ip firewall filter add chain=input protocol=tcp src-address-list="Syn Flood" action=tarpit
+ip settings set tcp-syncookies=yes
+ip neighbor discovery-settings set discover-interface-list=none
+ip firewall mangle add chain=prerouting action=change-ttl new-ttl=increment:1 passthrough=yes
+
+
+R2:
+system identity set name=R2
+ip dhcp-client add interface=ether1 disabled=no
+ip address add address=172.48.20.1/30 interface=ether2
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=192.168.1.1
+routing ospf instance add name=OSPF3 router-id=3.3.3.3
+routing ospf network add network=172.48.20.0/30 area=backbone
+routing ospf network add network=192.168.1.0/24 area=backbone
+
+R3:
+system identity set name=R3
+ip dhcp-client add interface=ether1 disabled=no
+ip address add address=172.48.30.1/30 interface=ether2
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=192.168.1.1
+routing ospf instance add name=OSPF4 router-id=4.4.4.4
+routing ospf network add network=172.48.30.0/30 area=backbone
+routing ospf network add network=192.168.1.0/24 area=backbone
+
+
+
+
+
+--------------------------------------------------------------------------------------------
+R4:
+system identity set name=R4
+ip address add address=172.48.10.2/30 interface=ether1
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=172.48.10.1
+ip dns set servers=8.8.8.8
+interface vrrp add name=VRRP1-1 interface=ether2 vrid=1 priority=50
+interface vrrp add name=VRRP2-1 interface=ether3 vrid=2 priority=150
+ip address add address=192.168.11.1/24 interface=ether2
+ip address add address=192.168.11.250/24 interface=VRRP1-1 
+ip address add address=192.168.20.1/24 interface=ether3
+ip address add address=192.168.20.250/24 interface=VRRP2-1
+
+#failsafe configuration:
+
+system script add name=internet_check_R1 dont-require-permissions=yes
+system script add name=verify_net_R1 dont-require-permissions=yes
+system script edit internet_check_R1 source
+------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+:log info ("R1 internet down")
+/interface vrrp disable VRRP1-1
+/interface vrrp disable VRRP2-1
+sys scheduler enable verify_net_R1_sch
+tool netwatch disable [find comment="internet_check_R1"]
+}	
+---------------------------
+system script edit verify_net_R1 source
+----------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+} else={
+:log info ("R1 internet UP")
+/interface vrrp enable VRRP1-1
+/interface vrrp enable VRRP2-1
+tool netwatch enable [find comment="internet_check_R1"]
+sys scheduler disable verify_net_R1_sch
+}
+-----------------------------
+tool netwatch add host=8.8.8.8 interval=10s down-script=internet_check_R1 comment=internet_check_R1
+system scheduler add disabled=yes interval=10s name=verify_net_R1_sch on-event=verify_net_R1
+
+
+-------------------------------------------------------------------------------------
+
+
+R5:
+system identity set name=R5
+ip address add address=172.48.20.2/30 interface=ether1
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=172.48.20.1
+ip dns set servers=8.8.8.8
+interface vrrp add name=VRRP1-2 interface=ether2 vrid=1 priority=100
+interface vrrp add name=VRRP2-2 interface=ether3 vrid=2 priority=100
+ip address add address=192.168.11.2/24 interface=ether2
+ip address add address=192.168.11.250/24 interface=VRRP1-2 
+ip address add address=192.168.20.2/24 interface=ether3
+ip address add address=192.168.20.250/24 interface=VRRP2-2
+
+failsafe configuration:
+
+system script add name=internet_check_R5 dont-require-permissions=yes
+system script add name=verify_net_R5 dont-require-permissions=yes
+system script edit internet_check_R5 source
+------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+:log info ("R5 internet down")
+/interface vrrp disable VRRP1-2
+/interface vrrp disable VRRP2-2
+sys scheduler enable verify_net_R5_sch
+tool netwatch disable [find comment="internet_check_R5"]
+}	
+---------------------------
+system script edit verify_net_R5 source
+----------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+} else={
+:log info ("R5 internet UP")
+/interface vrrp enable VRRP1-2
+/interface vrrp enable VRRP2-2
+tool netwatch enable [find comment="internet_check_R5"]
+sys scheduler disable verify_net_R5_sch
+}
+-----------------------------
+tool netwatch add host=8.8.8.8 interval=10s down-script=internet_check_R5 comment=internet_check_R5
+system scheduler add disabled=yes interval=10s name=verify_net_R5_sch on-event=verify_net_R5
+
+
+--------------------------------------------------------------------------------------
+
+
+R6:
+system identity set name=R6
+ip address add address=172.48.30.2/30 interface=ether1
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=172.48.30.1
+ip dns set servers=8.8.8.8
+interface vrrp add name=VRRP1-3 interface=ether2 vrid=1 priority=150
+interface vrrp add name=VRRP2-3 interface=ether3 vrid=2 priority=50
+ip address add address=192.168.11.3/24 interface=ether2
+ip address add address=192.168.11.250/24 interface=VRRP1-3 
+ip address add address=192.168.20.3/24 interface=ether3
+ip address add address=192.168.20.250/24 interface=VRRP2-3
+
+#failsafe configuration:
+
+system script add name=internet_check_R6 dont-require-permissions=yes
+system script add name=verify_net_R6 dont-require-permissions=yes
+system script edit internet_check_R6 source
+------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+:log info ("R6 internet down")
+/interface vrrp disable VRRP1-3
+/interface vrrp disable VRRP2-3
+sys scheduler enable verify_net_R6_sch
+tool netwatch disable [find comment="internet_check_R6"]
+}	
+---------------------------
+system script edit verify_net_R6 source
+----------------------------
+:local ipPing ("8.8.8.8")
+:local interface ("ether1")
+
+:local pingip [/ping $ipPing interface=$interface count=5]
+:if ($pingip < 5) do={
+
+} else={
+:log info ("R6 internet UP")
+/interface vrrp enable VRRP1-3
+/interface vrrp enable VRRP2-3
+tool netwatch enable [find comment="internet_check_R6"]
+sys scheduler disable verify_net_R6_sch
+}
+-----------------------------
+tool netwatch add host=8.8.8.8 interval=10s down-script=internet_check_R6 comment=internet_check_R6
+system scheduler add disabled=yes interval=10s name=verify_net_R6_sch on-event=verify_net_R6
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------
+Switch:
+
+
+IOU1:
+-----------------------------------------------------------------------------------------------------
+interface vlan 1
+ip address 192.168.11.251 255.255.255.0
+no shut
+exit
+ip dhcp pool IOU1
+network 192.168.11.0 255.255.255.0
+default-router 192.168.11.250
+dns-server 8.8.8.8
+exit
+ip dhcp excluded-address 192.168.11.250
+ip dhcp excluded-address 192.168.11.251
+ip dhcp excluded-address 192.168.11.1  
+ip dhcp excluded-address 192.168.11.2
+ip dhcp excluded-address 192.168.11.3
+int ethernet 3/2
+switchport access vlan 10
+exit
+int ethernet 3/3
+switchport access vlan 10
+exit
+
+
+
+
+IOU2:
+--------------------------------------------------------------------------------------------------------------------
+interface vlan 1
+ip address 192.168.20.251 255.255.255.0
+no shut
+exit
+ip dhcp pool IOU1
+network 192.168.20.0 255.255.255.0
+default-router 192.168.20.250
+dns-server 8.8.8.8
+exit
+ip dhcp excluded-address 192.168.20.250
+ip dhcp excluded-address 192.168.20.251
+ip dhcp excluded-address 192.168.20.1
+ip dhcp excluded-address 192.168.20.2
+ip dhcp excluded-address 192.168.20.3
+int ethernet 3/2
+switchport access vlan 10
+exit
+int ethernet 3/3
+switchport access vlan 10
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+vrrp configuration:
+R1:
+interface vrrp add name=VRRP1 interface=ether2 vrid=1 priority=100
+ip address add address=192.168.123.1/24 interface=ether2
+ip address add address=192.168.123.250/24 interface=VRRP1 
+interface vrrp print 
+Flags: X - disabled, I - invalid, R - running, M - master, B - backup 
+ #     NAME      INTER... MAC-ADDRESS       VRI PRI INTERVAL             V V3..
+ 0   B VRRP1     ether2   00:00:5E:00:01:01   1 100 1s                   3 ipv4
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=192.168.10.1
+
+R2:
+interface vrrp add name=VRRP2 interface=ether2 vrid=1 priority=110
+ip address add address=192.168.123.2/24 interface=ether2
+ip address add address=192.168.123.250/24 interface=VRRP2 
+interface vrrp print 
+Flags: X - disabled, I - invalid, R - running, M - master, B - backup 
+ #     NAME      INTER... MAC-ADDRESS       VRI PRI INTERVAL             V V3..
+ 0  RM VRRP1     ether2   00:00:5E:00:01:01   1 100 1s                   3 ipv4
+ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade
+ip route add dst-address=0.0.0.0/0 gateway=192.168.10.1
